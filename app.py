@@ -80,6 +80,8 @@ def main():
         show_reports_page()
 
 def show_home_page():
+    st.write("Debugging session state:")
+    st.write(st.session_state.transactions)
     # Hiển thị trang chủ trực tiếp trong app.py
     st.markdown("<h2>Tổng quan quỹ</h2>", unsafe_allow_html=True)
     
