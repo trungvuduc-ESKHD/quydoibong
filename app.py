@@ -18,7 +18,9 @@ if 'transactions' not in st.session_state:
     st.session_state.transactions = []
 
 # Đảm bảo summary luôn được khởi tạo
-utils.initialize_data()
+if 'app_initialized' not in st.session_state:
+    utils.initialize_data()
+    st.session_state.app_initialized = True
 
 # Tạo header và menu điều hướng
 def main():
@@ -446,6 +448,5 @@ def show_reports_page():
 
 # Main
 if __name__ == "__main__":
-    utils.initialize_data()
     main()
     
