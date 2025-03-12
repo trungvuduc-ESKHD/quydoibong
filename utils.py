@@ -97,12 +97,14 @@ def fetch_transactions_from_db():
         create_table(conn)
         transactions = select_all_transactions(conn)
         conn.close()
-        print(f"Loaded {len(transactions)} transactions from the database") # Add Debug
+        print(f"✅ Loaded {len(transactions)} transactions from the database") # Debug
         return [
-            {'id': row[0], 'type': row[1], 'amount': row[2], 'description': row[3], 'category': row[4], 'date': row[5], 'image_url': row[6]}
+            {'id': row[0], 'type': row[1], 'amount': row[2], 'description': row[3], 'category': row[4], 'date': row[5],
+             'image_url': row[6]}
             for row in transactions
         ]
     else:
+        print(f"❌ Could not load database {DB_FILE}")
         return []
 
 # --- Supabase Storage Functions ---
