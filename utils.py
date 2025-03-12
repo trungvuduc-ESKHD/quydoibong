@@ -42,8 +42,9 @@ def create_connection():
     conn = None
     try:
         conn = sqlite3.connect(DB_FILE)
+        print("Successfully connected to SQLite database")  # Debug
     except sqlite3.Error as e:
-        print(e)
+        print(f"Error connecting to SQLite database: {e}")
     return conn
 
 def create_table(conn):
@@ -55,14 +56,15 @@ def create_table(conn):
         description TEXT,
         category TEXT,
         date TEXT,
-        image_url TEXT  -- Add image_url
+        image_url TEXT
     );
     """
     try:
         c = conn.cursor()
         c.execute(sql_create_table)
+        print("Successfully created transactions table (if it didn't exist)") # Debug
     except sqlite3.Error as e:
-        print(e)
+        print(f"Error creating transactions table: {e}")
 
 def insert_transaction(conn, transaction):
     sql = """
@@ -72,7 +74,10 @@ def insert_transaction(conn, transaction):
     cur = conn.cursor()
     cur.execute(sql, transaction)
     conn.commit()
-    return cur.lastrowid
+    last_row_id = cur.lastrowid  # Get ID for the new row
+    conn.close()  # Close connection *after* getting lastrowid
+    print(f"✅ Saved to database transaction ID: {transaction[0]}")
+    return last_row_id
 
 def select_all_transactions(conn):
     cur = conn.cursor()
@@ -92,8 +97,9 @@ def fetch_transactions_from_db():
         create_table(conn)
         transactions = select_all_transactions(conn)
         conn.close()
+        print(f"Loaded {len(transactions)} transactions from the database") # Add Debug
         return [
-            {'id': row[0], 'type': row[1], 'amount': row[2], 'description': row[3], 'category': row[4], 'date': row[5], 'image_url': row[6]}  # Include image_url
+            {'id': row[0], 'type': row[1], 'amount': row[2], 'description': row[3], 'category': row[4], 'date': row[5], 'image_url': row[6]}
             for row in transactions
         ]
     else:
