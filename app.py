@@ -444,4 +444,6 @@ def show_reports_page():
 
 # Main
 if __name__ == "__main__":
+    utils.initialize_data()
     main()
+    
