@@ -84,11 +84,14 @@ def fetch_transactions_from_db():
         create_table(conn)
         transactions = select_all_transactions(conn)
         conn.close()
+        print(f"✅ fetch_transactions_from_db: Loaded {len(transactions)} transactions from the database")  # Debug
+        print(f"✅ fetch_transactions_from_db: Transactions data: {transactions}")  # Debug
         return [
             {'id': row[0], 'type': row[1], 'amount': row[2], 'description': row[3], 'category': row[4], 'date': row[5], 'image_url': row[6]}
             for row in transactions
         ]
     else:
+        print(f"❌ fetch_transactions_from_db: Could not load database {DB_FILE}")
         return []
 
 def add_transaction(transaction_data: Dict, image_file=None) -> None:
@@ -290,7 +293,16 @@ def initialize_data():
         conn.close()
 
     if 'transactions' not in st.session_state:
-        st.session_state.transactions = fetch_transactions_from_db()
+        transactions_from_db = fetch_transactions_from_db() # Check for value
+
+        st.session_state.transactions = transactions_from_db # Run okay for now
+
+        print (f"✅ Init with value: {transactions_from_db}")
+    else:
+        print(f"✅ Already Inited: {st.session_state.transactions}")
+
+    # Update summary
+    update_summary()
 
     # Update summary
     update_summary()
