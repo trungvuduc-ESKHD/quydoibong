@@ -22,7 +22,6 @@ if 'app_initialized' not in st.session_state:
     utils.initialize_data()
     st.session_state.app_initialized = True
 
-# Tạo header và menu điều hướng
 def main():
     # CSS
     st.markdown("""
@@ -205,6 +204,7 @@ def show_home_page():
                     utils.add_transaction(transaction_data)
                     st.success("Đã thêm giao dịch thành công!")
                     st.rerun() # Changed here
+
 
 def show_transactions_page():
     # Container chính
@@ -447,4 +447,3 @@ def show_reports_page():
 # Main
 if __name__ == "__main__":
     main()
-    
