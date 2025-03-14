@@ -5,8 +5,7 @@ import uuid
 import plotly.express as px
 import plotly.graph_objects as go
 from typing import Dict, List, Literal, Optional, TypedDict, Union
-import gspread
-from google.oauth2.service_account import Credentials
+import sqlite3 # Import SQLite
 
 # --- Data Types ---
 class Transaction(TypedDict):
@@ -28,126 +27,114 @@ CATEGORIES = {
 def format_currency(amount: float) -> str:
     return f"{amount:,.0f} VNĐ"
 
-# --- Google Sheets Configuration ---
-def get_google_sheet():
-    """Connects to Google Sheets using credentials from Streamlit secrets."""
+# --- Database Configuration (SQLite) ---
+DB_FILE = "data.db"
+
+def create_connection():
+    conn = None
     try:
-        # Get credentials from Streamlit secrets
-        creds_dict = st.secrets["gcp_service_account"]  # Assuming you named the secret 'gcp_service_account'
+        conn = sqlite3.connect(DB_FILE)
+    except sqlite3.Error as e:
+        print(e)
+    return conn
 
-        scopes = [
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive"  # Add Drive API for permissions
-        ]
-        creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
-        gc = gspread.service_account(filename=None, creds=creds)  # Use creds parameter
-        spreadsheet_id = st.secrets["spreadsheet_id"] # Assuming you named the secret 'spreadsheet_id'
-
-        sh = gc.open_by_key(spreadsheet_id)
-        worksheet = sh.sheet1  # Or use sh.worksheet("Sheet Name")
-
-        return worksheet
-    except Exception as e:
-        st.error(f"Error connecting to Google Sheets: {e}")
-        return None
-
-# --- Transaction Management Functions (Google Sheets) ---
-def add_transaction(transaction_data: Dict, image_file=None) -> None:
-    """Adds a new transaction to Google Sheets and session state."""
+def create_table(conn):
+    sql_create_table = """
+    CREATE TABLE IF NOT EXISTS transactions (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL,
+        amount REAL NOT NULL,
+        description TEXT,
+        category TEXT,
+        date TEXT,
+        image_url TEXT
+    );
+    """
     try:
-        transaction_id = str(uuid.uuid4())
-        #  No supabase storage, will add later
+        c = conn.cursor()
+        c.execute(sql_create_table)
+    except sqlite3.Error as e:
+        print(e)
 
-        # Create the transaction object
-        transaction = {
-            'id': transaction_id,
-            'type': transaction_data['type'],
-            'amount': float(transaction_data['amount']),
-            'description': transaction_data['description'],
-            'category': transaction_data['category'],
-            'date': transaction_data['date'],
-            'image_url': None  # Or implement Google Drive storage if needed
-        }
-        # Write data to google sheet
-        worksheet = get_google_sheet()
-        if worksheet is None:
-            st.error("Could not connect to Google Sheets")
-            return
+def insert_transaction(conn, transaction):
+    sql = """
+    INSERT INTO transactions(id, type, amount, description, category, date, image_url)
+    VALUES(?,?,?,?,?,?,?)
+    """
+    cur = conn.cursor()
+    cur.execute(sql, transaction)
+    conn.commit()
+    return cur.lastrowid
 
-        row = [transaction['id'], transaction['type'], transaction['amount'], transaction['description'], transaction['category'], transaction['date'], transaction['image_url']]
+def select_all_transactions(conn):
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM transactions")
+    rows = cur.fetchall()
+    return rows
 
-        worksheet.append_row(row)  # Appends a row to the spreadsheet
+def delete_transaction_from_db(conn, transaction_id):
+    sql = "DELETE FROM transactions WHERE id=?"
+    cur = conn.cursor()
+    cur.execute(sql, (transaction_id,))
+    conn.commit()
 
-        # Update session state (add to the beginning)
-        st.session_state.transactions.insert(0, transaction)
-
-        # Update summary
-        update_summary()
-
-    except Exception as e:
-        st.error(f"Error adding transaction to Google Sheets: {e}")
-
-def delete_transaction(transaction_id: str) -> None:
-    """Deletes a transaction from Google Sheets and session state."""
-    try:
-        worksheet = get_google_sheet()
-        if worksheet is None:
-            st.error("Could not connect to Google Sheets")
-            return
-
-        # Find the row to delete (inefficient, optimize if needed)
-        transactions = get_transactions_from_sheet()  # Reload from sheet
-        row_index = None
-        for i, transaction in enumerate(transactions):
-            if transaction['id'] == transaction_id:
-                row_index = i + 2 # +2 because Google Sheets is 1-indexed and has a header row
-                break
-
-        if row_index:
-            worksheet.delete_rows(row_index)  # Deletes the row
-
-            # Update session state
-            st.session_state.transactions = [t for t in st.session_state.transactions if t['id'] != transaction_id]
-
-            # Update summary
-            update_summary()
-        else:
-            st.warning(f"Transaction with ID '{transaction_id}' not found.")
-
-    except Exception as e:
-        st.error(f"Error deleting transaction from Google Sheets: {e}")
-
-def get_transactions_from_sheet() -> List[Dict]:
-    """Loads transactions from Google Sheets."""
-    try:
-        worksheet = get_google_sheet()
-        if worksheet is None:
-            st.error("Could not connect to Google Sheets")
-            return []
-
-        # Get all records from the worksheet
-        records = worksheet.get_all_records()  # Returns a list of dictionaries
-
-        # The headers from a single row
-        header = ['id', 'type', 'amount', 'description', 'category', 'date', 'image_url']
-        if not records:
-            print(f"Warning, no records on google sheet {spreadsheet_id}, generating header")
-            worksheet.append_row(header)
-            return []
-
-        # The keys (as a single dict)
+def fetch_transactions_from_db():
+    conn = create_connection()
+    if conn is not None:
+        create_table(conn)
+        transactions = select_all_transactions(conn)
+        conn.close()
         return [
-            {header[0]: row['id'], header[1]: row['type'], header[2]: row['amount'], header[3]: row['description'], header[4]: row['category'],
-            header[5]: row['date'], header[6]: row['image_url']}
-            for row in records  # Correctly iterates through the retrieved data
+            {'id': row[0], 'type': row[1], 'amount': row[2], 'description': row[3], 'category': row[4], 'date': row[5], 'image_url': row[6]}
+            for row in transactions
         ]
-    except Exception as e:
-        st.error(f"Error loading transactions from Google Sheets: {e}")
+    else:
         return []
 
-# --- Remaining Functions (Mostly Unchanged) ---
+def add_transaction(transaction_data: Dict, image_file=None) -> None:
+    """Add a new transaction to database and session state."""
+
+    transaction_id = str(uuid.uuid4())
+
+    # Create the transaction object
+    transaction = {
+        'id': transaction_id,
+        'type': transaction_data['type'],
+        'amount': float(transaction_data['amount']),
+        'description': transaction_data['description'],
+        'category': transaction_data['category'],
+        'date': transaction_data['date'],
+        'image_url': None
+    }
+
+    # Add to SQLite database
+    conn = create_connection()
+    if conn is not None:
+        insert_transaction(conn, (transaction['id'], transaction['type'], transaction['amount'], transaction['description'], transaction['category'], transaction['date'], transaction['image_url']))
+        conn.close()
+    else:
+        st.error("Failed to connect to SQLite database.")
+
+    # Update session state (add to the beginning)
+    st.session_state.transactions.insert(0, transaction)
+
+    # Update summary
+    update_summary()
+
+def delete_transaction(transaction_id: str) -> None:
+    """Delete a transaction from database and session state."""
+    conn = create_connection()
+    if conn is not None:
+        delete_transaction_from_db(conn, transaction_id)
+        conn.close()
+
+    st.session_state.transactions = [t for t in st.session_state.transactions if t['id'] != transaction_id]
+
+    # Update summary
+    update_summary()
+
 def update_summary() -> None:
-    """Updates summary information based on session state."""
+    """Update summary information."""
     if 'summary' not in st.session_state:
         st.session_state.summary = {
             'current_balance': 0,
@@ -166,7 +153,7 @@ def update_summary() -> None:
     }
 
 def get_all_months() -> List[str]:
-    """Gets a list of all months in the data."""
+    """Get a list of all months in the data."""
     months = set()
 
     for t in st.session_state.transactions:
@@ -176,7 +163,7 @@ def get_all_months() -> List[str]:
     return sorted(list(months), reverse=True)
 
 def get_monthly_report(month: str) -> Dict:
-    """Gets the report for a specific month."""
+    """Get the report for a specific month."""
     monthly_transactions = [t for t in st.session_state.transactions if t['date'].startswith(month)]
 
     total_income = sum(t['amount'] for t in monthly_transactions if t['type'] == 'income')
@@ -192,7 +179,7 @@ def get_monthly_report(month: str) -> Dict:
     }
 
 def get_expense_by_category(transactions: List[Transaction]) -> Dict[str, float]:
-    """Gets expenses by category."""
+    """Get expenses by category."""
     expenses_by_category = {}
 
     for t in transactions:
@@ -206,7 +193,7 @@ def get_expense_by_category(transactions: List[Transaction]) -> Dict[str, float]
     return expenses_by_category
 
 def get_transaction_df(transactions: List[Transaction]) -> pd.DataFrame:
-    """Converts transaction list to DataFrame."""
+    """Convert transaction list to DataFrame."""
     if not transactions:
         return pd.DataFrame()
 
@@ -224,7 +211,7 @@ def get_transaction_df(transactions: List[Transaction]) -> pd.DataFrame:
     return df
 
 def plot_income_expense_bar(income: float, expense: float) -> go.Figure:
-    """Creates income/expense bar chart."""
+    """Create income/expense bar chart."""
     fig = go.Figure(data=[
         go.Bar(
             x=['Thu', 'Chi'],
@@ -251,7 +238,7 @@ def plot_income_expense_bar(income: float, expense: float) -> go.Figure:
     return fig
 
 def plot_category_pie(expense_by_category: Dict[str, float]) -> Optional[go.Figure]:
-    """Creates category pie chart."""
+    """Create category pie chart."""
     if not expense_by_category:
         return None
 
@@ -279,11 +266,31 @@ def plot_category_pie(expense_by_category: Dict[str, float]) -> Optional[go.Figu
 
     return fig
 
+def display_account_information(account_number, account_name, bank_name):
+    st.write(f"""
+        <div style="padding: 10px; border: 1px solid #ccc; border-radius: 5px;">
+            <p style="margin-bottom: 5px;">
+                <strong>Số tài khoản:</strong> {account_number}
+            </p>
+            <p style="margin-bottom: 5px;">
+                <strong>Tên chủ tài khoản:</strong> {account_name}
+            </p>
+            <p style="margin-bottom: 5px;">
+                <strong>Ngân hàng:</strong> {bank_name}
+            </p>
+        </div>
+    """, unsafe_allow_html=True)
+
 # --- Initialization ---
 def initialize_data():
-    """Initializes session state from Google Sheets."""
+    """Initializes session state and database."""
+    conn = create_connection()
+    if conn is not None:
+        create_table(conn)
+        conn.close()
+
     if 'transactions' not in st.session_state:
-        st.session_state.transactions = get_transactions_from_sheet()
+        st.session_state.transactions = fetch_transactions_from_db()
 
     # Update summary
     update_summary()
