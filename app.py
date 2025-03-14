@@ -13,15 +13,11 @@ st.set_page_config(
     layout="wide"
 )
 
-# Kiểm tra và khởi tạo session state nếu cần
-if 'transactions' not in st.session_state:
-    st.session_state.transactions = []
 
-# Đảm bảo summary luôn được khởi tạo
 if 'app_initialized' not in st.session_state:
     utils.initialize_data()
     st.session_state.app_initialized = True
-
+    
 def main():
     # CSS
     st.markdown("""
